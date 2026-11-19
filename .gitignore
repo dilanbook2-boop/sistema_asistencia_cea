@@ -1,0 +1,9 @@
+# Configuración local con datos sensibles (usuario/contraseña de la BD)
+config/db.php
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
