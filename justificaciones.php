@@ -4,7 +4,8 @@ require_once __DIR__ . '/config/db.php';
 
 $mensaje = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'justificar') {
+// Solo el administrador puede registrar justificaciones
+if (es_admin() && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'justificar') {
     $asistenciaId = $_POST['asistencia_id'] ?? '';
     $motivo = trim($_POST['motivo'] ?? '');
 
@@ -26,12 +27,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
     }
 }
 
+// El docente solo ve lo suyo; el administrador ve todo
+$filtroEmp = es_docente() ? ' AND a.empleado_id = ' . (int)(empleado_actual_id() ?? 0) : '';
+
 try {
     $pendientes = $pdo->query("
         SELECT a.id, e.nombre, a.fecha, a.hora, a.estado
         FROM asistencias a
         JOIN empleados e ON e.id = a.empleado_id
-        WHERE a.estado IN ('tardanza', 'falta')
+        WHERE a.estado IN ('tardanza', 'falta') $filtroEmp
         ORDER BY a.fecha DESC
     ")->fetchAll();
 
@@ -40,6 +44,7 @@ try {
         FROM justificaciones j
         JOIN asistencias a ON a.id = j.asistencia_id
         JOIN empleados e ON e.id = a.empleado_id
+        WHERE 1=1 $filtroEmp
         ORDER BY j.creado_en DESC
         LIMIT 15
     ")->fetchAll();
@@ -65,10 +70,11 @@ try {
 <?php endif; ?>
 
 <div class="panel">
-    <h3>Tardanzas y faltas pendientes de justificar</h3>
+    <h3><?= es_admin() ? 'Tardanzas y faltas pendientes de justificar' : 'Mis tardanzas y faltas sin justificar' ?></h3>
+    <?php if (es_docente()): ?><p class="muted" style="margin-bottom:10px;">Las justificaciones las registra el administrador. Si tienes un motivo, comunícaselo para que lo registre.</p><?php endif; ?>
     <table>
         <thead>
-            <tr><th>Nombre</th><th>Fecha</th><th>Hora</th><th>Estado</th><th>Justificar</th></tr>
+            <tr><th>Nombre</th><th>Fecha</th><th>Hora</th><th>Estado</th><?php if (es_admin()): ?><th>Justificar</th><?php endif; ?></tr>
         </thead>
         <tbody>
             <?php if (empty($pendientes)): ?>
@@ -80,6 +86,7 @@ try {
                         <td><?= htmlspecialchars($p['fecha']) ?></td>
                         <td><?= htmlspecialchars($p['hora']) ?></td>
                         <td><span class="badge <?= $p['estado'] === 'tardanza' ? 'late' : 'absent' ?>"><?= htmlspecialchars(ucfirst($p['estado'])) ?></span></td>
+                        <?php if (es_admin()): ?>
                         <td>
                             <details>
                                 <summary class="btn-link">Justificar</summary>
@@ -98,6 +105,7 @@ try {
                                 </form>
                             </details>
                         </td>
+                        <?php endif; ?>
                     </tr>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -106,7 +114,7 @@ try {
 </div>
 
 <div class="panel">
-    <h3>Últimas justificaciones registradas</h3>
+    <h3><?= es_admin() ? 'Últimas justificaciones registradas' : 'Mis justificaciones' ?></h3>
     <table>
         <thead>
             <tr><th>Nombre</th><th>Fecha</th><th>Motivo</th></tr>

@@ -5,8 +5,11 @@ require_once __DIR__ . '/config/db.php';
 $desde = $_GET['desde'] ?? date('Y-m-01');
 $hasta = $_GET['hasta'] ?? date('Y-m-d');
 
+$soloMio = es_docente();
+$eidFiltro = (int)(empleado_actual_id() ?? 0);
+
 try {
-    $resumen = $pdo->query("
+    $stmtR = $pdo->prepare("
         SELECT
             e.nombre,
             c.nombre AS carrera,
@@ -17,19 +20,23 @@ try {
         FROM empleados e
         LEFT JOIN carreras c ON c.id = e.carrera_id
         LEFT JOIN asistencias a ON a.empleado_id = e.id
-        WHERE e.estado = 'activo'
+        WHERE e.estado = 'activo' " . ($soloMio ? 'AND e.id = :eid ' : '') . "
         GROUP BY e.nombre, c.nombre
         ORDER BY c.nombre ASC, e.nombre ASC
-    ")->fetchAll();
+    ");
+    $stmtR->execute($soloMio ? ['eid' => $eidFiltro] : []);
+    $resumen = $stmtR->fetchAll();
 
     $stmt = $pdo->prepare("
         SELECT e.nombre, a.fecha, a.hora, a.tipo_marcacion, a.estado
         FROM asistencias a
         JOIN empleados e ON e.id = a.empleado_id
-        WHERE a.fecha BETWEEN :desde AND :hasta
+        WHERE a.fecha BETWEEN :desde AND :hasta " . ($soloMio ? 'AND a.empleado_id = :eid ' : '') . "
         ORDER BY a.fecha DESC, a.hora DESC
     ");
-    $stmt->execute(['desde' => $desde, 'hasta' => $hasta]);
+    $params = ['desde' => $desde, 'hasta' => $hasta];
+    if ($soloMio) { $params['eid'] = $eidFiltro; }
+    $stmt->execute($params);
     $detalle = $stmt->fetchAll();
 } catch (PDOException $e) {
     $resumen = [];
@@ -49,7 +56,7 @@ try {
 <h2 class="page-title">Reportes</h2>
 
 <div class="panel">
-    <h3>Resumen acumulado por docente</h3>
+    <h3><?= es_admin() ? 'Resumen acumulado por docente' : 'Mi resumen acumulado' ?></h3>
     <table>
         <thead>
             <tr><th>Nombre</th><th>Carrera</th><th>Puntuales</th><th>Tardanzas</th><th>Faltas</th><th>Justificadas</th></tr>

@@ -122,16 +122,16 @@ body {
 .logo-wrap { margin-bottom: 22px; }
 
 .logo-img {
-    width: 84px;
-    height: 84px;
+    width: 140px;
+    height: 140px;
     border-radius: 50%;
     object-fit: cover;
     border: 2px solid rgba(255,255,255,0.15);
 }
 
 .logo-placeholder {
-    width: 84px;
-    height: 84px;
+    width: 140px;
+    height: 140px;
     border-radius: 50%;
     background: #e3e1da;
 }
@@ -297,3 +297,10 @@ details[open] > summary { margin-bottom: 12px; }
 .btn-success { color: #1a7a3a; }
 
 .muted { color: #8a8a8f; font-size: 12px; }
+
+/* --- Roles / sesión --- */
+.topbar-right { display: flex; align-items: center; gap: 22px; }
+.user-label { font-size: 12px; letter-spacing: 0.5px; color: #cfcfd4; font-weight: 400; }
+.badge.role-admin { background: #e7e4fb; color: #40309c; }
+.badge.role-docente { background: #e6f1fb; color: #0c447c; }
+.notice-warn { background: #faeeda; color: #633806; padding: 12px 18px; border-radius: 8px; font-size: 14px; margin-bottom: 16px; }

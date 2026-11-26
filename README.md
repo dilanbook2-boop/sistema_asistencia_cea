@@ -22,9 +22,31 @@ psql -d asistencia_cea -f migracion_v2.sql
 Esto agrega las tablas `carreras` y `justificaciones`, y el vínculo de cada
 empleado a su carrera.
 
-## Usuario de prueba
-- Usuario: `admin`
-- Contraseña: `admin123`
+## Si ya tenías la base con la v2 (agregar login seguro y roles)
+```
+psql -d asistencia_cea -f migracion_v3.sql
+```
+Crea la tabla `intentos_login`, agrega `empleado_id` a `usuarios_sistema` y
+convierte los usuarios con rol "coordinador" en administradores.
+
+## Seguridad del login
+- Tras **5 intentos fallidos** seguidos del mismo usuario, la cuenta se bloquea **10 minutos**
+  (aunque se acierte la contraseña durante ese tiempo). Un login correcto reinicia el contador.
+- El administrador puede desbloquear una cuenta antes desde **Configuración**.
+- Los valores (5 / 10) están como constantes al inicio de `login.php`.
+
+## Roles
+| | Administrador | Docente |
+|---|---|---|
+| Inicio | Resumen general del día | Solo sus datos del mes y su horario |
+| Personal (alta/edición de horarios) | Sí | No |
+| Justificaciones | Ver y registrar | Solo ver las suyas |
+| Reportes | Todos | Solo los suyos |
+| Configuración (usuarios, bajas) | Sí | No |
+
+Para crear un usuario docente: primero registra al docente en **Personal**, luego en
+**Configuración → Agregar nuevo usuario**, elige rol *Docente* y selecciona su ficha.
+
 
 ## Logo de la institución
 Coloca un archivo `logo.png` dentro de `assets/` y aparecerá automáticamente
