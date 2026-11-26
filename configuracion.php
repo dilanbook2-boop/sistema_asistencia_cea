@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth_check.php';
 require_once __DIR__ . '/config/db.php';
+requiere_admin();
 
 $mensaje = '';
 
@@ -9,19 +10,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
     $nombre = trim($_POST['nombre'] ?? '');
     $usuario = trim($_POST['usuario'] ?? '');
     $clave = $_POST['clave'] ?? '';
-    $rol = $_POST['rol'] ?? 'administrador';
+    $rol = $_POST['rol'] ?? '';
+    $empleadoId = $_POST['empleado_id'] ?? '';
 
-    if ($nombre !== '' && $usuario !== '' && $clave !== '') {
+    if (!in_array($rol, ['administrador', 'docente'], true)) {
+        $mensaje = 'Rol no válido.';
+    } elseif ($nombre === '' || $usuario === '' || $clave === '') {
+        $mensaje = 'Completa todos los campos para crear el usuario.';
+    } elseif (strlen($clave) < 6) {
+        $mensaje = 'La contraseña debe tener al menos 6 caracteres.';
+    } elseif ($rol === 'docente' && $empleadoId === '') {
+        $mensaje = 'Para el rol Docente debes elegir a qué docente corresponde este usuario.';
+    } else {
         try {
             $hash = password_hash($clave, PASSWORD_BCRYPT);
-            $stmt = $pdo->prepare('INSERT INTO usuarios_sistema (nombre, usuario, clave, rol) VALUES (:nombre, :usuario, :clave, :rol)');
-            $stmt->execute(['nombre' => $nombre, 'usuario' => $usuario, 'clave' => $hash, 'rol' => $rol]);
+            $stmt = $pdo->prepare('INSERT INTO usuarios_sistema (nombre, usuario, clave, rol, empleado_id) VALUES (:nombre, :usuario, :clave, :rol, :eid)');
+            $stmt->execute([
+                'nombre' => $nombre, 'usuario' => $usuario, 'clave' => $hash, 'rol' => $rol,
+                'eid' => $rol === 'docente' ? (int)$empleadoId : null,
+            ]);
             $mensaje = 'Usuario del sistema creado correctamente.';
         } catch (PDOException $e) {
             $mensaje = 'Error: ya existe un usuario con ese nombre de usuario.';
         }
-    } else {
-        $mensaje = 'Completa todos los campos para crear el usuario.';
+    }
+}
+
+// Desbloquear una cuenta bloqueada por intentos fallidos
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'desbloquear') {
+    $u = mb_strtolower(trim($_POST['usuario_bloqueado'] ?? ''));
+    if ($u !== '') {
+        $pdo->prepare('DELETE FROM intentos_login WHERE usuario = :u')->execute(['u' => $u]);
+        $mensaje = 'Cuenta desbloqueada.';
     }
 }
 
@@ -58,11 +78,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
 }
 
 try {
-    $usuariosSistema = $pdo->query('SELECT * FROM usuarios_sistema ORDER BY nombre ASC')->fetchAll();
+    $usuariosSistema = $pdo->query('SELECT u.*, e.nombre AS docente_nombre FROM usuarios_sistema u LEFT JOIN empleados e ON e.id = u.empleado_id ORDER BY u.nombre ASC')->fetchAll();
+    $docentesSinUsuario = $pdo->query("SELECT id, nombre FROM empleados WHERE estado = 'activo' AND id NOT IN (SELECT empleado_id FROM usuarios_sistema WHERE empleado_id IS NOT NULL) ORDER BY nombre ASC")->fetchAll();
+    $bloqueados = $pdo->query("SELECT usuario, CEIL(EXTRACT(EPOCH FROM (MAX(creado_en) + INTERVAL '10 minutes' - NOW())) / 60) AS minutos FROM intentos_login WHERE creado_en > NOW() - INTERVAL '10 minutes' GROUP BY usuario HAVING COUNT(*) >= 5")->fetchAll();
     $activos = $pdo->query("SELECT id, nombre, cargo FROM empleados WHERE estado = 'activo' ORDER BY nombre ASC")->fetchAll();
     $retirados = $pdo->query("SELECT id, nombre, cargo FROM empleados WHERE estado = 'retirado' ORDER BY nombre ASC")->fetchAll();
 } catch (PDOException $e) {
     $usuariosSistema = [];
+    $docentesSinUsuario = [];
+    $bloqueados = [];
     $activos = [];
     $retirados = [];
 }
@@ -84,11 +108,6 @@ try {
 <?php endif; ?>
 
 <div class="panel">
-    <h3>Logo de la institución</h3>
-    <p class="muted">Para que el logo aparezca en el menú lateral, coloca un archivo llamado <strong>logo.png</strong> dentro de la carpeta <strong>assets/</strong> del proyecto (reemplaza el círculo gris automáticamente, sin tocar código).</p>
-</div>
-
-<div class="panel">
     <h3>Estado del biométrico</h3>
     <p style="font-size:14px; margin-bottom:10px;">
         IP del equipo: <strong>192.168.1.201</strong> &nbsp;|&nbsp;
@@ -97,18 +116,43 @@ try {
     <button type="button" class="btn-primary" style="background:#5b4fe0; color:#fff;">Sincronizar ahora</button>
 </div>
 
+<?php if (!empty($bloqueados)): ?>
+<div class="panel">
+    <h3>Cuentas bloqueadas por intentos fallidos</h3>
+    <table>
+        <thead><tr><th>Usuario</th><th>Se libera en</th><th>Acción</th></tr></thead>
+        <tbody>
+            <?php foreach ($bloqueados as $b): ?>
+                <tr>
+                    <td><?= htmlspecialchars($b['usuario']) ?></td>
+                    <td><?= (int)$b['minutos'] ?> min</td>
+                    <td>
+                        <form method="POST" action="configuracion.php" style="display:inline;">
+                            <input type="hidden" name="accion" value="desbloquear">
+                            <input type="hidden" name="usuario_bloqueado" value="<?= htmlspecialchars($b['usuario']) ?>">
+                            <button type="submit" class="btn-link btn-success">Desbloquear ahora</button>
+                        </form>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
+
 <div class="panel">
     <h3>Usuarios del sistema</h3>
-    <p class="muted" style="margin-bottom:10px;">Personas que pueden iniciar sesión en este sistema (administradores/coordinadores). Esto es distinto al personal docente.</p>
+    <p class="muted" style="margin-bottom:10px;">Personas que pueden iniciar sesión en este sistema (administradores y docentes). Un <strong>administrador</strong> tiene acceso total. Un <strong>docente</strong> solo ve su propio horario, marcaciones, reportes y justificaciones (sin poder modificar nada).</p>
 
     <table>
-        <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Acción</th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Docente vinculado</th><th>Acción</th></tr></thead>
         <tbody>
             <?php foreach ($usuariosSistema as $u): ?>
                 <tr>
                     <td><?= htmlspecialchars($u['nombre']) ?></td>
                     <td><?= htmlspecialchars($u['usuario']) ?></td>
-                    <td><?= htmlspecialchars(ucfirst($u['rol'])) ?></td>
+                    <td><span class="badge <?= $u['rol'] === 'administrador' ? 'role-admin' : 'role-docente' ?>"><?= htmlspecialchars(ucfirst($u['rol'])) ?></span></td>
+                    <td><?= $u['docente_nombre'] ? htmlspecialchars($u['docente_nombre']) : '<span class="muted">-</span>' ?></td>
                     <td>
                         <?php if ((int)$u['id'] !== (int)$_SESSION['usuario_id']): ?>
                             <form method="POST" action="configuracion.php" onsubmit="return confirm('¿Eliminar este usuario del sistema?');" style="display:inline;">
@@ -139,14 +183,23 @@ try {
                     <input type="text" name="usuario" required>
                 </div>
                 <div class="field">
-                    <label>Contraseña</label>
-                    <input type="password" name="clave" required>
+                    <label>Contraseña (mín. 6)</label>
+                    <input type="password" name="clave" required minlength="6">
                 </div>
                 <div class="field">
                     <label>Rol</label>
-                    <select name="rol">
+                    <select name="rol" id="rolSelect" onchange="toggleDocente()">
                         <option value="administrador">Administrador</option>
-                        <option value="coordinador">Coordinador</option>
+                        <option value="docente">Docente</option>
+                    </select>
+                </div>
+                <div class="field" id="campoDocente" style="display:none;">
+                    <label>Docente</label>
+                    <select name="empleado_id">
+                        <option value="">Selecciona...</option>
+                        <?php foreach ($docentesSinUsuario as $d): ?>
+                            <option value="<?= $d['id'] ?>"><?= htmlspecialchars($d['nombre']) ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="field">
@@ -207,5 +260,11 @@ try {
 </div>
 
 <?php include __DIR__ . '/includes/footer.php'; ?>
+<script>
+function toggleDocente() {
+    document.getElementById('campoDocente').style.display =
+        document.getElementById('rolSelect').value === 'docente' ? '' : 'none';
+}
+</script>
 </body>
 </html>
